@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>To-do</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://prefsdb.com/prefsdb.v1.min.js"></script>
+  <script src="https://prefsdb.com/prefsdb.signin.v1.min.js"></script>
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <main class="card">
+    <h1>To-do</h1>
+
+    <!-- Sign in: email + passphrase become the PrefsDB seed -->
+    <section id="signin-view">
+      <div id="sso" class="sso"></div>
+      <div class="divider"><span>or use email and passphrase</span></div>
+      <p class="hint">The same email and passphrase bring your list back on any device.</p>
+      <form id="signin-form">
+        <input id="email" type="email" placeholder="Email" required
+               spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off">
+        <input id="passphrase" type="password" placeholder="Passphrase" required minlength="8"
+               spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off">
+        <button type="submit">Sign in</button>
+      </form>
+    </section>
+
+    <!-- New key: waiting for the email link to be clicked -->
+    <section id="verify-view" hidden>
+      <p>We sent a verification link to <strong id="verify-email"></strong>. Click it, then come back here; the app will sign you in.</p>
+      <button id="verify-continue">I've verified, continue</button>
+      <button id="verify-cancel" class="link">Use a different account</button>
+    </section>
+
+    <!-- The list itself -->
+    <section id="todo-view" hidden>
+      <form id="add-form">
+        <input id="new-todo" type="text" placeholder="What needs doing?" maxlength="500" required autocomplete="off">
+        <button type="submit">Add</button>
+      </form>
+
+      <ul id="todo-list"></ul>
+
+      <footer>
+        <span id="remaining"></span>
+        <span class="filters">
+          <button data-filter="all" class="link active">All</button>
+          <button data-filter="active" class="link">Active</button>
+          <button data-filter="done" class="link">Done</button>
+        </span>
+        <button id="clear-done" class="link">Clear done</button>
+      </footer>
+      <button id="signout" class="link signout">Sign out</button>
+    </section>
+
+    <p id="status" role="status"></p>
+  </main>
+</body>
+</html>

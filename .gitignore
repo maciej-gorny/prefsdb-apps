@@ -1,0 +1,9 @@
+# Local TLS certificates and keys (generated per machine, see todo/README.md)
+.cert/
+*.pem
+*.key
+
+# Environment and dependencies
+.env
+.env.*
+node_modules/
