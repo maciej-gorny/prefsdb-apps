@@ -1,4 +1,4 @@
-# Local TLS certificates and keys (generated per machine, see todo/README.md)
+# Local TLS certificates and keys (no longer needed: serve.js uses http://localhost)
 .cert/
 *.pem
 *.key

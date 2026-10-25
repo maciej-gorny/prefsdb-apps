@@ -3,26 +3,31 @@
 A static to-do app with no backend: data lives in [PrefsDB](https://prefsdb.com).
 
 - **Sign-in:** email + passphrase are the seed for `PrefsDB.getkey("todo-app", [email, passphrase], { email })`.
-  The client hashes the seed in the browser. A new account gets a verification email and works once the link is clicked.
+  The client hashes the seed in the browser. A new account gets a verification email; the page waits with
+  `db.waitForVerification()` and opens the list as soon as the link is clicked.
+- **Testing without an inbox:** sign in with any address at `sandbox.prefsdb.com` (e.g. `dev@sandbox.prefsdb.com`).
+  That makes a PrefsDB test key: it works at once, has small limits and is deleted after a day.
 - **Google / GitHub sign-in:** PrefsDB's sign-in add-on (`prefsdb.signin.v1.min.js`) gives each Google or GitHub account
   its own key. No email step is needed. GitHub works with no setup. Google needs your own OAuth client ID: create a
-  "Web application" client in Google Cloud, add `https://localhost:8443` (and your real host) under
-  *Authorized JavaScript origins*, then paste the ID into `GOOGLE_CLIENT_ID` in `app.js`. These are separate accounts
-  from email + passphrase ones, so the same person gets a different list.
+  "Web application" client in Google Cloud, add `http://localhost:8080` (and your real host) under
+  *Authorized JavaScript origins*, then paste the ID into `GOOGLE_CLIENT_ID` in `app.js`. Each way of signing in is a
+  separate account with its own list; the app says so when someone switches.
 - **Storage:** each to-do is one entry in the map `todos` (project `todo-app`), keyed by its id, with a JSON value
-  `{ id, text, done, created }`. Edits overwrite the entry; deletes remove it; "Clear done" deletes several keys in one call.
-- **Session:** the session lasts 8 hours. If it expires, the app calls `getkey` again with the credentials it holds in memory.
-  The passphrase is never saved, so reloading the page means signing in again.
+  `{ id, text, done, created }`, read back with `entries()`. Edits overwrite the entry; deletes remove it; "Clear done"
+  deletes several keys in one call.
+- **Session:** the PrefsDB client keeps the session and renews it by itself. The app only hears about it when renewing
+  is impossible (`db.onSessionExpired()`, e.g. a Google/GitHub sign-in older than 7 days) and then asks to sign in again.
+  The passphrase is never stored, so reloading the page means signing in again.
+- **Client:** `index.html` loads PrefsDB client release 1.0.0 with its SRI hash, so the browser refuses a changed file.
+  Newer releases and their hashes are listed at https://prefsdb.com/v/versions.json.
 
 ## Run
 
-PrefsDB's `getkey` only works on a page served over **HTTPS** (plain `http://localhost` won't keep the session cookie).
-Some options:
+Serve the folder from `https://` anywhere (GitHub Pages, Netlify, Cloudflare Pages, ...), or locally from
+`http://localhost`, which PrefsDB accepts while you develop:
 
-- Deploy the folder to any static HTTPS host (GitHub Pages, Netlify, Cloudflare Pages, ...).
-- Locally: `node serve.js` serves the folder at `https://localhost:8443/` using the self-signed certificate in `.cert/`
-  (expect a browser warning). To make a new certificate:
-  `openssl req -x509 -newkey rsa:2048 -nodes -days 365 -keyout .cert/key.pem -out .cert/cert.pem -subj "/CN=localhost" -addext "subjectAltName=DNS:localhost,IP:127.0.0.1"`
+    node serve.js        # http://localhost:8080/
+    # or: python3 -m http.server 8080 --bind localhost
 
 Keys are tied to the page's origin, so a list created on one host won't appear on another.
 

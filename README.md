@@ -11,4 +11,5 @@ A to-do list that runs as plain static files: HTML, CSS and JavaScript, with no 
 - **Manage to-dos:** add, tick off, edit (double-click), delete, filter by All / Active / Done, and clear finished items.
 - **Storage:** each to-do is saved as one entry in a PrefsDB map. Changes appear instantly and are undone if a save fails.
 
-To run it locally over HTTPS (PrefsDB requires it), see [todo/README.md](todo/README.md).
+To run it locally (`node serve.js`, then http://localhost:8080/), see [todo/README.md](todo/README.md). Sign in with an
+address at `sandbox.prefsdb.com` to try it without a real inbox.

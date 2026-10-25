@@ -5,8 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>To-do</title>
   <link rel="stylesheet" href="style.css">
-  <script src="https://prefsdb.com/prefsdb.v1.min.js"></script>
-  <script src="https://prefsdb.com/prefsdb.signin.v1.min.js"></script>
+  <!-- PrefsDB client release 1.0.0, pinned and checked by the browser (https://prefsdb.com/v/versions.json) -->
+  <script src="https://prefsdb.com/v/1.0.0/prefsdb.v1.min.js"
+          integrity="sha384-DGHlvsWOcfcryTvVuRJub8C5h6fHuhmFtUL0Dgt8CuhAoPbNqI7eAjzeDEEShjec" crossorigin="anonymous"></script>
+  <script src="https://prefsdb.com/v/1.0.0/prefsdb.signin.v1.min.js"
+          integrity="sha384-XXoZrl4VvVWRO0Nd2G1fo8opyQJ5Cav402/kA3Kg1hJTvNVU/s7EYqxpOM0wX3M/" crossorigin="anonymous"></script>
   <script src="app.js" defer></script>
 </head>
 <body>
@@ -29,8 +32,7 @@
 
     <!-- New key: waiting for the email link to be clicked -->
     <section id="verify-view" hidden>
-      <p>We sent a verification link to <strong id="verify-email"></strong>. Click it, then come back here; the app will sign you in.</p>
-      <button id="verify-continue">I've verified, continue</button>
+      <p>We sent a verification link to <strong id="verify-email"></strong>. Click it, and this page opens your list by itself.</p>
       <button id="verify-cancel" class="link">Use a different account</button>
     </section>
 

@@ -8,8 +8,11 @@ const MAP = "todos";
 const GOOGLE_CLIENT_ID = "";
 
 let db = null;
-let account = null; // { kind: "password", email, passphrase } or { kind: "sso", provider }; memory only
+let todoStore = null; // db.project(APP_NAME).map(MAP), kept: a chain never changes db, so it can be reused
+let account = null; // { kind: "password", email } or { kind: "sso", provider }; memory only
 let sso = null;
+let waiting = null; // AbortController while waiting for the email link to be clicked
+let unwatch = null; // removes the onSessionExpired listener of the current key
 let todos = [];
 let filter = "all";
 
@@ -30,35 +33,24 @@ function describeError(err) {
   return (err && (err.message || err.error)) || String(err);
 }
 
-// "Refresh token" / "Expired token" / SESSION_*: the key is fine, its session isn't.
-function isSessionError(res) {
-  return /SESSION_|refresh token|expired token/i.test(`${res.error || ""} ${res.message || ""}`);
-}
-
 // ---------- PrefsDB ----------
 
-// Gets the key again, which also starts a fresh session.
-async function connect() {
-  if (account.kind !== "password") {
-    throw { error: "SESSION_EXPIRED", message: "Your session ended. Please sign in again." };
-  }
-  const { email, passphrase } = account;
-  db = await PrefsDB.getkey(APP_NAME, [email, passphrase], { email });
-  return db;
+// The client keeps the session itself (it renews it before it runs out), so
+// a key only stops working when renewing it is impossible: a Google/GitHub
+// sign-in older than 7 days, or a key that was rotated or removed.
+function useKey(key) {
+  if (unwatch) unwatch();
+  db = key;
+  todoStore = db.project(APP_NAME).map(MAP);
+  unwatch = db.onSessionExpired(() => {
+    signOut();
+    setStatus("Your session ended. Please sign in again.", true);
+  });
 }
 
-// The scope every call uses; builder state resets after each request.
-function store() {
-  return db.project(APP_NAME).map(MAP);
-}
-
-// Runs a PrefsDB call; if the session is missing or expired, renews it once and retries.
+// Runs a PrefsDB call and throws its error object (check err.error, a stable code).
 async function call(fn) {
-  let res = await fn();
-  if (res && res.success === false && isSessionError(res)) {
-    await connect();
-    res = await fn();
-  }
+  const res = await fn();
   if (res && res.success === false) throw res;
   return res;
 }
@@ -70,18 +62,18 @@ function parseEntry(v) {
   return v && typeof v === "object" && v.id ? v : null;
 }
 
+// entries() gives [{ key, value }] whether the map holds one to-do or many.
 async function loadTodos() {
-  const res = await call(() => store().read());
-  const raw = res.values ?? (res.count ? [res.value] : []);
-  todos = raw.map(parseEntry).filter(Boolean).sort((a, b) => a.created - b.created);
+  const entries = await todoStore.entries();
+  todos = entries.map((e) => parseEntry(e.value)).filter(Boolean).sort((a, b) => a.created - b.created);
 }
 
 function saveTodo(todo) {
-  return call(() => store().put(todo.id, JSON.stringify(todo)));
+  return call(() => todoStore.put(todo.id, JSON.stringify(todo)));
 }
 
 function removeTodo(id) {
-  return call(() => store().remove(id));
+  return call(() => todoStore.remove(id));
 }
 
 // ---------- rendering ----------
@@ -139,6 +131,7 @@ async function guarded(action, rollback) {
     await action();
     setStatus("");
   } catch (err) {
+    if (!db) return; // signed out meanwhile (session ended): that message stays
     rollback();
     render();
     setStatus("Couldn't save: " + describeError(err), true);
@@ -197,7 +190,7 @@ async function clearDone() {
   todos = todos.filter((t) => !t.done);
   render();
   await guarded(
-    () => call(() => store().keys(done.map((t) => t.id)).delete()),
+    () => call(() => todoStore.keys(done.map((t) => t.id)).delete()),
     () => { todos = todos.concat(done).sort((a, b) => a.created - b.created); });
 }
 
@@ -212,26 +205,36 @@ async function openList() {
   $("new-todo").focus();
 }
 
-function showVerify(msg = "") {
+function showVerify() {
   $("verify-email").textContent = account.email;
-  setStatus(msg, !!msg);
+  setStatus("");
   show("verify-view");
 }
 
 let signingIn = false;
 
-// Email + passphrase. Also used after the verification link is clicked:
-// getkey() runs again first, so the list loads with a fresh session.
-async function signIn() {
+// Email + passphrase. A new account waits on this page until its link is
+// clicked: waitForVerification() checks every few seconds, and at once when
+// the user comes back to this tab from their inbox. An address at
+// sandbox.prefsdb.com makes a test key, which needs no email (see README).
+async function signIn(email, passphrase) {
   if (signingIn) return;
   signingIn = true;
   setStatus("Signing in…");
   try {
-    await connect();
-    if (db.emailVerificationRequired()) return showVerify();
+    account = { kind: "password", email };
+    useKey(await PrefsDB.getkey(APP_NAME, [email, passphrase], { email }));
+    if (db.emailVerificationRequired()) {
+      showVerify();
+      waiting = new AbortController();
+      await db.waitForVerification({ signal: waiting.signal });
+      waiting = null;
+    }
     await openList();
+    if (db.testKey()) setStatus("Test account: it works without an email and is deleted after a day.");
   } catch (err) {
-    if (err && err.error === "UNVERIFIED") return showVerify("This account isn't verified yet. Click the link in the email first.");
+    if (err && err.error === "ABORTED") return; // "Use a different account"
+    show("signin-view");
     setStatus("Sign-in failed: " + describeError(err), true);
   } finally {
     signingIn = false;
@@ -246,11 +249,16 @@ function setupSso() {
     github: true,
     theme: matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light",
     onStart: () => setStatus("Signing in…"),
-    onSignIn: async (signedIn, { provider }) => {
-      db = signedIn;
+    onSignIn: async (signedIn, { provider, previousProvider }) => {
+      useKey(signedIn);
       account = { kind: "sso", provider };
       try {
         await openList();
+        // Each way of signing in is a separate account with its own list.
+        if (previousProvider) {
+          const names = { google: "Google", github: "GitHub", microsoft: "Microsoft", apple: "Apple" };
+          setStatus(`You signed in with ${names[previousProvider] || previousProvider} last time. This is a separate account with its own list.`);
+        }
       } catch (err) {
         setStatus("Sign-in failed: " + describeError(err), true);
       }
@@ -264,8 +272,13 @@ function setupSso() {
 }
 
 function signOut() {
+  if (waiting) waiting.abort();
+  waiting = null;
   if (account && account.kind === "sso" && sso) sso.signOut();
+  if (unwatch) unwatch();
+  unwatch = null;
   db = null;
+  todoStore = null;
   account = null;
   todos = [];
   $("signin-form").reset();
@@ -277,23 +290,12 @@ function signOut() {
 
 $("signin-form").addEventListener("submit", (e) => {
   e.preventDefault();
-  account = {
-    kind: "password",
-    email: $("email").value.trim().toLowerCase(),
-    passphrase: $("passphrase").value,
-  };
-  signIn();
+  signIn($("email").value.trim().toLowerCase(), $("passphrase").value);
 });
 
-$("verify-continue").addEventListener("click", signIn);
 $("verify-cancel").addEventListener("click", signOut);
 $("signout").addEventListener("click", signOut);
 $("clear-done").addEventListener("click", clearDone);
-
-// Coming back to this tab from the verification email: try again automatically.
-document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "visible" && !$("verify-view").hidden) signIn();
-});
 
 $("add-form").addEventListener("submit", (e) => {
   e.preventDefault();
@@ -306,8 +308,5 @@ $("add-form").addEventListener("submit", (e) => {
 document.querySelectorAll("[data-filter]").forEach((b) =>
   b.addEventListener("click", () => { filter = b.dataset.filter; render(); }));
 
-if (location.protocol !== "https:") {
-  setStatus("PrefsDB needs this page served over HTTPS — sign-in won't work over " + location.protocol, true);
-} else {
-  setupSso();
-}
+// https:, or http://localhost while developing (PrefsDB refuses other plain-http pages).
+setupSso();
